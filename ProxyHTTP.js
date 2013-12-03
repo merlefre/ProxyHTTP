@@ -16,13 +16,14 @@ var log = function (context, err, code, callback){
   if (context.restricted){
     if (err == "HTTP" && context.login)var data = "" + context.date + "\t" + context.login + "\t" + context.req.method + "\t" + context.req.url + "\t" + code +"\n";
     else var data = "" + context.date + "\t" + err +"\n";
+  }else if (err == "HTTP")var data = "" + context.date + "\t" + context.req.method + "\t" + context.req.headers.host + context.req.url + "\t" + code +"\n";
   
-    if (data){
-      console.log(data);
-      fs.appendFileSync(conf[context.conf].logFile, data);
-    };
-    callback();
+  if (data){
+    console.log(data);
+    if (context.conf) fs.appendFileSync(conf[context.conf].logFile, data);
+    else fs.appendFileSync("ProxyHTTP.log", data); //change the name of the proxy log file inside the code
   };
+  callback();
 };
 
 // Test function for basic http authentication with a fixed login/password defined in config.json
@@ -185,14 +186,22 @@ var matching = function(host){
 // Main HTTP server
 
 http.createServer(function (request, response){
+  var context = {
+    "req": request,
+    "res": response,
+    "date": new Date()
+  };
   var index = matching(request.headers.host);
   if(index == -1){
     response.writeHead(404);
     log(context, "HTTP", 404, function(){});
     response.end("Not Found");
   }else{
+  	context.conf = index;
+    
     var head = JSON.parse(JSON.stringify(request.headers)); 
     if (request.headers.authorization && conf[index].hideAuth) delete head.authorization;
+    
     var options = {
       'host': conf[index].host,
       'port': conf[index].port, 
@@ -201,19 +210,13 @@ http.createServer(function (request, response){
       'headers': head,
       'agent': false
     };
-
-    var context = {
-      "req": request,
-      "res": response,
-      "options": options,
-      "conf": index
-    };
+    
+    context.options = options;
 
     if (request.headers.authorization){
       context.auth = request.headers.authorization.split(" ")[1];
       context.login = new Buffer(context.auth, 'base64').toString().split(':')[0];
       context.pw = new Buffer(context.auth, 'base64').toString().split(':')[1];
-      context.date = new Date();
     };
 
     var i=0;
